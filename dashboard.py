@@ -1,142 +1,75 @@
 import streamlit as st
 import pandas as pd
-import pickle
 import plotly.express as px
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, r2_score
-import time
+import joblib
 
-# ==============================
-# PAGE CONFIG
-# ==============================
-st.set_page_config(layout="wide")
-st.title("🚀 Post-Discharge Social Support and Recovery Tracker")
+st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
 
-# 🔵 Animation - Loading Effect
-with st.spinner("⏳ Loading Dataset & Training Model..."):
-    time.sleep(1)
+st.title("Post Discharge Social Support & Recovery Tracker")
 
-# ==============================
+# ===============================
 # LOAD DATA
-# ==============================
-df = pd.read_csv("rhs_ml_dataset.csv")
+# ===============================
 
-st.subheader("📊 Dataset Preview")
+@st.cache_data
+def load_data():
+    return pd.read_csv("rhs_ml_dataset.csv")
+
+df = load_data()
+
+st.subheader("Dataset Preview")
 st.dataframe(df.head())
 
-# ==============================
-# CLEAN DATA
-# ==============================
+# ===============================
+# DASHBOARD VISUALS
+# ===============================
 
-df = df.replace(r"[^\d.]", "", regex=True)
+st.subheader("Readmission Distribution")
 
-for col in df.columns:
-    df[col] = pd.to_numeric(df[col], errors="ignore")
-
-df = df.fillna(0)
-
-# ==============================
-# DEFINE TARGET
-# ==============================
-target = df.columns[-1]
-
-X = df.drop(columns=[target])
-y = df[target]
-
-X = pd.get_dummies(X)
-X, y = X.align(y, join="inner", axis=0)
-
-# ==============================
-# TRAIN MODEL WITH PROGRESS BAR
-# ==============================
-
-st.subheader("🤖 Training Model...")
-
-progress_bar = st.progress(0)
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
-
-model = RandomForestRegressor(n_estimators=100, random_state=42)
-
-# Simulated progress animation
-for percent in range(1, 101, 20):
-    time.sleep(0.2)
-    progress_bar.progress(percent)
-
-model.fit(X_train, y_train)
-
-y_pred = model.predict(X_test)
-
-mae = mean_absolute_error(y_test, y_pred)
-r2 = r2_score(y_test, y_pred)
-
-st.success("✅ Model Training Completed!")
-
-st.metric("📉 MAE", round(mae, 3))
-st.metric("📊 R² Score", round(r2, 3))
-
-pickle.dump(model, open("model.pkl", "wb"))
-
-# ==============================
-# ANIMATED VISUALIZATION
-# ==============================
-
-st.subheader("📊 Animated Visualization")
-
-with st.expander("📈 Target Distribution (Click to Expand)"):
-    fig1 = px.histogram(df, x=target, title="Target Distribution")
-    fig1.update_layout(transition_duration=500)
+if "Readmitted" in df.columns:
+    fig1 = px.histogram(df, x="Readmitted", title="Readmission Count")
     st.plotly_chart(fig1, use_container_width=True)
 
-with st.expander("🔥 Feature Importance"):
-    importance = model.feature_importances_
-
-    feature_df = pd.DataFrame({
-        "Feature": X.columns,
-        "Importance": importance
-    })
-
-    fig2 = px.bar(
-        feature_df,
-        x="Feature",
-        y="Importance",
-        title="Feature Importance"
-    )
-
-    fig2.update_layout(transition_duration=800)
-
+if "Age" in df.columns:
+    fig2 = px.histogram(df, x="Age", title="Age Distribution")
     st.plotly_chart(fig2, use_container_width=True)
 
-# ==============================
-# ANIMATED PREDICTION PANEL
-# ==============================
+# ===============================
+# LOAD MODEL
+# ===============================
 
-st.subheader("🔮 Prediction Panel")
+@st.cache_resource
+def load_model():
+    return joblib.load("readmission_model.pkl")
 
-input_data = {}
+model = load_model()
 
-cols = st.columns(2)
+# ===============================
+# PREDICTION SECTION
+# ===============================
 
-for i, col in enumerate(X.columns):
-    with cols[i % 2]:
-        input_data[col] = st.number_input(
-            f"Enter {col}",
-            value=0.0
-        )
+st.subheader("Predict Patient Readmission Risk")
 
-if st.button("🚀 Predict Now"):
-    with st.spinner("🧠 AI Thinking..."):
-        time.sleep(1)
+age = st.number_input("Age", 18, 100, 50)
+length_of_stay = st.number_input("Length of Stay (days)", 1, 60, 5)
+social_support = st.selectbox("Social Support Level", ["Low", "Medium", "High"])
 
-    input_df = pd.DataFrame([input_data])
-    prediction = model.predict(input_df)
+# Encode social support manually (adjust if your encoding differs)
+support_map = {"Low": 0, "Medium": 1, "High": 2}
+support_encoded = support_map[social_support]
 
-    st.balloons()  # Animation effect
-    st.success(f"🎯 Predicted Output: {prediction[0]}")
+if st.button("Predict Risk"):
 
+    input_data = pd.DataFrame({
+        "Age": [age],
+        "Length_of_Stay": [length_of_stay],
+        "Social_Support_Level": [support_encoded]
+    })
 
+    prediction = model.predict(input_data)[0]
+    probability = model.predict_proba(input_data)[0][1]
 
-
+    if prediction == 1:
+        st.error(f"High Readmission Risk (Probability: {probability:.2f})")
+    else:
+        st.success(f"Low Readmission Risk (Probability: {probability:.2f})")
