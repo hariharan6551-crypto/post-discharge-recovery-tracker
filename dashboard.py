@@ -11,7 +11,7 @@ import time
 # PAGE CONFIG
 # ==============================
 st.set_page_config(layout="wide")
-st.title("🚀 AI Predictive Analytics Dashboard")
+st.title("🚀 Post-Discharge Social Support and Recovery Tracker")
 
 # 🔵 Animation - Loading Effect
 with st.spinner("⏳ Loading Dataset & Training Model..."):
@@ -136,6 +136,7 @@ if st.button("🚀 Predict Now"):
 
     st.balloons()  # Animation effect
     st.success(f"🎯 Predicted Output: {prediction[0]}")
+
 
 
 
