@@ -20,7 +20,7 @@ with st.spinner("⏳ Loading Dataset & Training Model..."):
 # ==============================
 # LOAD DATA
 # ==============================
-df = pd.read_csv("nhs_ml_dataset.csv")
+ddf = pd.read_csv("rhs_ml_dataset.csv")
 
 st.subheader("📊 Dataset Preview")
 st.dataframe(df.head())
@@ -136,3 +136,4 @@ if st.button("🚀 Predict Now"):
 
     st.balloons()  # Animation effect
     st.success(f"🎯 Predicted Output: {prediction[0]}")
+
