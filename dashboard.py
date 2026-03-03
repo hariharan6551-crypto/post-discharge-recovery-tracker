@@ -137,3 +137,4 @@ if st.button("🚀 Predict Now"):
     st.balloons()  # Animation effect
     st.success(f"🎯 Predicted Output: {prediction[0]}")
 
+
