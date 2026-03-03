@@ -1,31 +1,27 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
+st.set_page_config(layout="wide")
 
-st.title("Post Discharge Social Support & Recovery Tracker")
-st.markdown("AI-Based Predictive & Recovery Monitoring Dashboard")
+st.title("Post Discharge Recovery Tracker")
 
-@st.cache_data
-def load_data():
-    return pd.read_csv("rhs_ml_dataset.csv")
+# ================= LOAD DATA =================
 
-df = load_data()
+try:
+    df = pd.read_csv("rhs_ml_dataset.csv")
+except:
+    st.error("rhs_ml_dataset.csv file not found")
+    st.stop()
 
-required_columns = [
-    "Age",
-    "Length_of_Stay",
-    "Social_Support_Level",
-    "Readmitted",
-    "Gender"
-]
+# ================= CHECK COLUMNS =================
 
-for col in required_columns:
+needed = ["Age","Length_of_Stay","Social_Support_Level","Readmitted","Gender"]
+
+for col in needed:
     if col not in df.columns:
         st.error(f"Missing column: {col}")
         st.stop()
@@ -33,109 +29,77 @@ for col in required_columns:
 if "Year" not in df.columns:
     df["Year"] = 2023
 
-# ================= FILTER =================
+# ================= FILTERS =================
 
-st.sidebar.header("Filter Panel")
+st.sidebar.header("Filters")
 
 year = st.sidebar.selectbox("Year", sorted(df["Year"].unique()))
-gender = st.sidebar.selectbox("Gender", ["All"] + sorted(df["Gender"].unique()))
+gender = st.sidebar.selectbox("Gender", ["All"] + list(df["Gender"].unique()))
 
-filtered_df = df[df["Year"] == year]
+filtered = df[df["Year"] == year]
 
 if gender != "All":
-    filtered_df = filtered_df[filtered_df["Gender"] == gender]
+    filtered = filtered[filtered["Gender"] == gender]
 
-# ================= KPI =================
+# ================= KPIs =================
 
-col1, col2, col3 = st.columns(3)
+col1,col2,col3 = st.columns(3)
 
-col1.metric("Total Patients", len(filtered_df))
+col1.metric("Patients", len(filtered))
 
-if len(filtered_df) > 0:
-    col2.metric("Readmission Rate (%)", f"{filtered_df['Readmitted'].mean()*100:.2f}")
-    col3.metric("Avg Stay", f"{filtered_df['Length_of_Stay'].mean():.1f} Days")
+if len(filtered) > 0:
+    col2.metric("Readmission %", round(filtered["Readmitted"].mean()*100,2))
+    col3.metric("Avg Stay", round(filtered["Length_of_Stay"].mean(),1))
 else:
-    col2.metric("Readmission Rate (%)", "0")
-    col3.metric("Avg Stay", "0")
+    col2.metric("Readmission %", 0)
+    col3.metric("Avg Stay", 0)
 
-# ================= CHARTS =================
+# ================= CHART =================
 
 trend = df.groupby("Year")["Readmitted"].mean().reset_index()
 
-fig_bar = px.bar(
-    trend,
-    x="Year",
-    y="Readmitted",
-    animation_frame="Year",
-    range_y=[0,1],
-    title="Yearly Readmission Trend"
-)
+fig = px.bar(trend,x="Year",y="Readmitted",title="Yearly Trend")
+st.plotly_chart(fig,use_container_width=True)
 
-st.plotly_chart(fig_bar, use_container_width=True)
-
-if len(filtered_df) > 0:
-
-    fig_donut = px.pie(
-        filtered_df,
-        names="Readmitted",
-        hole=0.5,
-        title="Readmission Distribution"
-    )
-    st.plotly_chart(fig_donut, use_container_width=True)
-
-    funnel = filtered_df["Social_Support_Level"].value_counts().reset_index()
-    funnel.columns = ["Support Level", "Count"]
-
-    fig_funnel = go.Figure(go.Funnel(
-        y=funnel["Support Level"],
-        x=funnel["Count"]
-    ))
-
-    st.plotly_chart(fig_funnel, use_container_width=True)
-
-# ================= ML MODEL (NO PKL) =================
+# ================= ML MODEL =================
 
 df["Gender_Encoded"] = df["Gender"].map({"Male":0,"Female":1})
 
 X = df[["Age","Length_of_Stay","Social_Support_Level","Gender_Encoded"]]
 y = df["Readmitted"]
 
-X_train,X_test,y_train,y_test = train_test_split(
-    X,y,test_size=0.2,random_state=42
-)
+X_train,X_test,y_train,y_test = train_test_split(X,y,test_size=0.2,random_state=42)
 
-model = RandomForestClassifier(random_state=42)
+model = RandomForestClassifier()
 model.fit(X_train,y_train)
 
-acc = accuracy_score(y_test, model.predict(X_test))
-st.sidebar.success(f"Model Accuracy: {acc:.2f}")
+accuracy = accuracy_score(y_test,model.predict(X_test))
+st.sidebar.success(f"Model Accuracy: {round(accuracy,2)}")
 
-# ================= PREDICTION =================
+# ================= PREDICTION PANEL =================
 
-st.subheader("Predictive Risk Panel")
+st.subheader("Predict Risk")
 
 c1,c2,c3,c4 = st.columns(4)
 
 age = c1.number_input("Age",18,100,50)
-stay = c2.number_input("Length of Stay",1,60,5)
-support = c3.selectbox("Social Support Level",[0,1,2])
-gender_input = c4.selectbox("Gender",["Male","Female"])
+stay = c2.number_input("Stay Days",1,60,5)
+support = c3.selectbox("Support Level",[0,1,2])
+g = c4.selectbox("Gender",["Male","Female"])
 
-gender_encoded = 0 if gender_input=="Male" else 1
+g_enc = 0 if g=="Male" else 1
 
-if st.button("Run Prediction"):
-
+if st.button("Predict"):
     input_df = pd.DataFrame({
         "Age":[age],
         "Length_of_Stay":[stay],
         "Social_Support_Level":[support],
-        "Gender_Encoded":[gender_encoded]
+        "Gender_Encoded":[g_enc]
     })
-
     pred = model.predict(input_df)[0]
     prob = model.predict_proba(input_df)[0][1]
 
-    if pred == 1:
-        st.error(f"High Risk — Probability: {prob:.2f}")
+    if pred==1:
+        st.error(f"High Risk: {round(prob,2)}")
     else:
-        st.success(f"Low Risk — Probability: {prob:.2f}")
+        st.success(f"Low Risk: {round(prob,2)}")
