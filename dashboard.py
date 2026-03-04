@@ -1,159 +1,196 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import LabelEncoder
+from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
+st.set_page_config(layout="wide")
 
 st.title("Post Discharge Social Support & Recovery Tracker")
-st.markdown("AI-Based Predictive & Recovery Monitoring Dashboard")
+st.subheader("AI-Based Predictive & Recovery Monitoring Dashboard")
 
-# ---------------- LOAD DATA ---------------- #
+# -----------------------------
+# Load dataset
+# -----------------------------
+df = pd.read_csv("recovery_tracker_data.csv")
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv("rhs_ml_dataset.csv")
+# -----------------------------
+# Data Cleaning
+# -----------------------------
+df = df.dropna()
 
-    # ---- AUTO FIX COMMON DATASET COLUMN NAMES ---- #
-    if "Sex_Breakdown" in df.columns:
-        df.rename(columns={"Sex_Breakdown": "Gender"}, inplace=True)
+# Convert date column if exists
+if "Date" in df.columns:
+    df["Date"] = pd.to_datetime(df["Date"])
+    df["Year"] = df["Date"].dt.year
+    df["Month"] = df["Date"].dt.month_name()
 
-    if "Indicator_value" in df.columns:
-        df.rename(columns={"Indicator_value": "Readmitted"}, inplace=True)
+# -----------------------------
+# Sidebar Filters
+# -----------------------------
+st.sidebar.header("Filters")
 
-    if "Time_Period" in df.columns:
-        df.rename(columns={"Time_Period": "Year"}, inplace=True)
+# Year filter
+if "Year" in df.columns:
+    year_filter = st.sidebar.multiselect(
+        "Select Year",
+        options=df["Year"].unique(),
+        default=df["Year"].unique()
+    )
+    df = df[df["Year"].isin(year_filter)]
 
-    # ---- CREATE MISSING COLUMNS IF NOT PRESENT ---- #
-    if "Length_of_Stay" not in df.columns:
-        df["Length_of_Stay"] = 5
+# Gender filter
+if "Gender" in df.columns:
+    gender_filter = st.sidebar.multiselect(
+        "Select Gender",
+        options=df["Gender"].unique(),
+        default=df["Gender"].unique()
+    )
+    df = df[df["Gender"].isin(gender_filter)]
 
-    if "Social_Support_Level" not in df.columns:
-        df["Social_Support_Level"] = 1
+# Month filter
+if "Month" in df.columns:
+    month_filter = st.sidebar.multiselect(
+        "Select Month",
+        options=df["Month"].unique(),
+        default=df["Month"].unique()
+    )
+    df = df[df["Month"].isin(month_filter)]
 
-    if "Gender" not in df.columns:
-        df["Gender"] = "Male"
+# Date filter
+if "Date" in df.columns:
+    date_filter = st.sidebar.date_input(
+        "Select Date Range",
+        [df["Date"].min(), df["Date"].max()]
+    )
+    df = df[(df["Date"] >= pd.to_datetime(date_filter[0])) &
+            (df["Date"] <= pd.to_datetime(date_filter[1]))]
 
-    if "Readmitted" not in df.columns:
-        df["Readmitted"] = 0
-
-    if "Year" not in df.columns:
-        df["Year"] = 2023
-
-    return df
-
-
-df = load_data()
-
-# ---------------- FILTER PANEL ---------------- #
-
-st.sidebar.header("Filter Panel")
-
-year = st.sidebar.selectbox("Year", sorted(df["Year"].unique()))
-gender = st.sidebar.selectbox("Gender", ["All"] + sorted(df["Gender"].unique()))
-
-filtered_df = df[df["Year"] == year]
-
-if gender != "All":
-    filtered_df = filtered_df[filtered_df["Gender"] == gender]
-
-# ---------------- KPI METRICS ---------------- #
+# -----------------------------
+# KPI Metrics
+# -----------------------------
+st.header("KPI Metrics")
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Total Patients", len(filtered_df))
+col1.metric("Total Patients", len(df))
 
-col2.metric(
-    "Readmission Rate (%)",
-    f"{filtered_df['Readmitted'].mean()*100:.2f}"
-)
+if "Recovery_Score" in df.columns:
+    col2.metric("Avg Recovery Score", round(df["Recovery_Score"].mean(),2))
 
-col3.metric(
-    "Avg Stay",
-    f"{filtered_df['Length_of_Stay'].mean():.1f} Days"
-)
+if "Readmission_Risk" in df.columns:
+    col3.metric("High Risk Patients",
+                (df["Readmission_Risk"]=="High").sum())
 
-# ---------------- YEARLY TREND ---------------- #
+# -----------------------------
+# Aggregated Dataset
+# -----------------------------
+st.header("Aggregated Dataset")
 
-trend = df.groupby("Year")["Readmitted"].mean().reset_index()
+if "Support_Level" in df.columns:
+    agg = df.groupby("Support_Level").mean(numeric_only=True)
+    st.dataframe(agg)
 
-fig_bar = px.bar(
-    trend,
-    x="Year",
-    y="Readmitted",
-    title="Yearly Readmission Trend"
-)
+# -----------------------------
+# Bar Chart
+# -----------------------------
+st.header("Recovery Score by Support Level")
 
-st.plotly_chart(fig_bar, use_container_width=True)
+if "Support_Level" in df.columns and "Recovery_Score" in df.columns:
 
-# ---------------- DONUT CHART ---------------- #
+    fig_bar = px.bar(
+        df,
+        x="Support_Level",
+        y="Recovery_Score",
+        color="Support_Level"
+    )
 
-fig_donut = px.pie(
-    filtered_df,
-    names="Readmitted",
-    hole=0.5,
-    title="Readmission Distribution"
-)
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-st.plotly_chart(fig_donut, use_container_width=True)
+# -----------------------------
+# Donut Chart
+# -----------------------------
+st.header("Support Level Distribution")
 
-# ---------------- FUNNEL CHART ---------------- #
+if "Support_Level" in df.columns:
 
-funnel = filtered_df["Social_Support_Level"].value_counts().reset_index()
-funnel.columns = ["Support Level", "Count"]
+    fig_donut = px.pie(
+        df,
+        names="Support_Level",
+        hole=0.5
+    )
 
-fig_funnel = go.Figure(go.Funnel(
-    y=funnel["Support Level"],
-    x=funnel["Count"]
-))
+    st.plotly_chart(fig_donut, use_container_width=True)
 
-st.plotly_chart(fig_funnel, use_container_width=True)
+# -----------------------------
+# Funnel Chart
+# -----------------------------
+st.header("Medication Adherence Funnel")
 
-# ---------------- MACHINE LEARNING MODEL ---------------- #
+if "Medication_Adherence" in df.columns:
 
-df["Gender_Encoded"] = df["Gender"].map({"Male":0,"Female":1}).fillna(0)
+    funnel_data = df["Medication_Adherence"].value_counts().reset_index()
+    funnel_data.columns = ["Stage","Count"]
 
-X = df[["Length_of_Stay","Social_Support_Level","Gender_Encoded"]]
-y = df["Readmitted"]
+    fig_funnel = px.funnel(
+        funnel_data,
+        x="Count",
+        y="Stage"
+    )
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+    st.plotly_chart(fig_funnel, use_container_width=True)
 
-model = RandomForestClassifier(random_state=42)
-model.fit(X_train, y_train)
+# -----------------------------
+# Yearly Trend Chart
+# -----------------------------
+if "Year" in df.columns and "Recovery_Score" in df.columns:
 
-acc = accuracy_score(y_test, model.predict(X_test))
+    st.header("Yearly Recovery Trend")
 
-st.sidebar.success(f"Model Accuracy: {acc:.2f}")
+    fig_year = px.bar(
+        df,
+        x="Year",
+        y="Recovery_Score",
+        color="Support_Level"
+    )
 
-# ---------------- REAL TIME PREDICTION ---------------- #
+    st.plotly_chart(fig_year, use_container_width=True)
 
-st.subheader("Predictive Risk Panel")
+# -----------------------------
+# MACHINE LEARNING MODEL
+# -----------------------------
+st.header("AI Readmission Risk Prediction")
 
-c1, c2, c3 = st.columns(3)
+if "Readmission_Risk" in df.columns:
 
-stay = c1.number_input("Length of Stay", 1, 60, 5)
-support = c2.selectbox("Social Support Level", [0,1,2])
-gender_input = c3.selectbox("Gender", ["Male","Female"])
+    df_ml = df.copy()
 
-gender_encoded = 0 if gender_input == "Male" else 1
+    label = LabelEncoder()
 
-if st.button("Run Prediction"):
+    for col in df_ml.select_dtypes(include="object").columns:
+        df_ml[col] = label.fit_transform(df_ml[col])
 
-    input_df = pd.DataFrame({
-        "Length_of_Stay":[stay],
-        "Social_Support_Level":[support],
-        "Gender_Encoded":[gender_encoded]
-    })
+    X = df_ml.drop(columns=["Readmission_Risk"])
+    y = df_ml["Readmission_Risk"]
 
-    pred = model.predict(input_df)[0]
-    prob = model.predict_proba(input_df)[0][1]
+    model = DecisionTreeClassifier()
+    model.fit(X,y)
 
-    if pred == 1:
-        st.error(f"High Risk — Probability: {prob:.2f}")
-    else:
-        st.success(f"Low Risk — Probability: {prob:.2f}")
+    # -----------------------------
+    # Prediction Panel
+    # -----------------------------
+    st.subheader("Real-Time Patient Risk Prediction")
+
+    input_data = {}
+
+    for col in X.columns:
+        val = st.number_input(f"Enter {col}", value=1)
+        input_data[col] = val
+
+    if st.button("Predict Risk"):
+
+        input_df = pd.DataFrame([input_data])
+
+        prediction = model.predict(input_df)
+
+        st.success(f"Predicted Risk Level: {prediction[0]}")
