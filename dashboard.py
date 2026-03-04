@@ -1,199 +1,160 @@
-# ==========================================
-# POST DISCHARGE RECOVERY TRACKER DASHBOARD
-# ==========================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-from sklearn.ensemble import RandomForestRegressor
 import plotly.express as px
 import plotly.graph_objects as go
+import pickle
+import os
 
-st.set_page_config(page_title="Recovery Dashboard", layout="wide")
+st.set_page_config(page_title="NHS Recovery Dashboard", layout="wide")
 
-st.title("Post Discharge Social Support & Recovery Tracker")
-st.subheader("AI-Based Predictive Recovery Monitoring Dashboard")
-
-# -----------------------------
-# LOAD DATASET SAFELY
-# -----------------------------
-
+# ----------------------------
+# SAFE FILE LOADING (Render Safe)
+# ----------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-file_path = os.path.join(BASE_DIR, "rhs_ml_dataset.csv")
+data_path = os.path.join(BASE_DIR, "rhs_ml_dataset.csv")
 
-try:
-    df = pd.read_csv(file_path)
-except:
-    st.error("Dataset file 'rhs_ml_dataset.csv' not found. Put it in the same folder as dashboard.py.")
-    st.stop()
+df = pd.read_csv(data_path)
 
-# -----------------------------
-# CLEAN COLUMN NAMES
-# -----------------------------
+# ----------------------------
+# DATE PROCESSING
+# ----------------------------
+if "Date" in df.columns:
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Year"] = df["Date"].dt.year
+    df["Month"] = df["Date"].dt.month_name()
 
-df.columns = df.columns.str.strip().str.replace(" ", "_")
-
-# -----------------------------
-# CREATE DATE IF MISSING
-# -----------------------------
-
-if "Date" not in df.columns:
-    df["Date"] = pd.date_range(start="2023-01-01", periods=len(df))
-
-df["Date"] = pd.to_datetime(df["Date"])
-
-df["Year"] = df["Date"].dt.year
-df["Month"] = df["Date"].dt.month
-df["Day"] = df["Date"].dt.day
-
-# -----------------------------
-# CREATE MISSING COLUMNS SAFELY
-# -----------------------------
-
-if "Gender" not in df.columns:
-    df["Gender"] = np.random.choice(["Male","Female"], len(df))
-
-if "Persons_Visiting" not in df.columns:
-    df["Persons_Visiting"] = np.random.randint(1,5,len(df))
-
-if "Recovery_Score" not in df.columns:
-    df["Recovery_Score"] = np.random.randint(40,100,len(df))
-
-if "Length_of_Stay" not in df.columns:
-    df["Length_of_Stay"] = np.random.randint(3,15,len(df))
-
-if "Support_Level" not in df.columns:
-    df["Support_Level"] = np.random.randint(1,10,len(df))
-
-# -----------------------------
+# ----------------------------
 # SIDEBAR FILTERS
-# -----------------------------
-
+# ----------------------------
 st.sidebar.header("Filters")
 
-year_filter = st.sidebar.multiselect(
-    "Year",
-    options=df["Year"].unique(),
-    default=df["Year"].unique()
-)
+if "Year" in df.columns:
+    selected_year = st.sidebar.multiselect(
+        "Select Year",
+        options=df["Year"].dropna().unique(),
+        default=df["Year"].dropna().unique()
+    )
+    df = df[df["Year"].isin(selected_year)]
 
-month_filter = st.sidebar.multiselect(
-    "Month",
-    options=df["Month"].unique(),
-    default=df["Month"].unique()
-)
+if "Month" in df.columns:
+    selected_month = st.sidebar.multiselect(
+        "Select Month",
+        options=df["Month"].dropna().unique(),
+        default=df["Month"].dropna().unique()
+    )
+    df = df[df["Month"].isin(selected_month)]
 
-gender_filter = st.sidebar.multiselect(
-    "Gender",
-    options=df["Gender"].unique(),
-    default=df["Gender"].unique()
-)
+if "Gender" in df.columns:
+    selected_gender = st.sidebar.multiselect(
+        "Select Gender",
+        options=df["Gender"].dropna().unique(),
+        default=df["Gender"].dropna().unique()
+    )
+    df = df[df["Gender"].isin(selected_gender)]
 
-filtered_df = df[
-    (df["Year"].isin(year_filter)) &
-    (df["Month"].isin(month_filter)) &
-    (df["Gender"].isin(gender_filter))
-]
-
-# -----------------------------
+# ----------------------------
 # KPI METRICS
-# -----------------------------
+# ----------------------------
+st.title("🏥 NHS Recovery Performance Dashboard")
 
-total_patients = len(filtered_df)
-avg_recovery = round(filtered_df["Recovery_Score"].mean(),2)
-avg_visitors = round(filtered_df["Persons_Visiting"].mean(),2)
-avg_stay = round(filtered_df["Length_of_Stay"].mean(),2)
+col1, col2, col3, col4 = st.columns(4)
 
-col1,col2,col3,col4 = st.columns(4)
+col1.metric("Total Patients", len(df))
 
-col1.metric("Total Patients", total_patients)
-col2.metric("Avg Recovery Score", avg_recovery)
-col3.metric("Avg Visitors", avg_visitors)
-col4.metric("Avg Length of Stay", avg_stay)
+if "Readmitted" in df.columns:
+    readmitted_count = df["Readmitted"].sum()
+    col2.metric("Total Readmissions", int(readmitted_count))
+
+if "Age" in df.columns:
+    col3.metric("Average Age", round(df["Age"].mean(), 1))
+
+if "Gender" in df.columns:
+    col4.metric("Unique Genders", df["Gender"].nunique())
 
 st.divider()
 
-# -----------------------------
-# BAR CHART (Year Trend)
-# -----------------------------
+# ----------------------------
+# BAR CHART
+# ----------------------------
+if "Gender" in df.columns:
+    gender_counts = df["Gender"].value_counts().reset_index()
+    gender_counts.columns = ["Gender", "Count"]
 
-year_chart = filtered_df.groupby("Year")["Recovery_Score"].mean().reset_index()
+    fig_bar = px.bar(
+        gender_counts,
+        x="Gender",
+        y="Count",
+        title="Patients by Gender"
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-fig_year = px.bar(
-    year_chart,
-    x="Year",
-    y="Recovery_Score",
-    title="Average Recovery Score by Year",
-    animation_frame="Year"
-)
+# ----------------------------
+# DONUT CHART
+# ----------------------------
+if "Readmitted" in df.columns:
+    readmit_counts = df["Readmitted"].value_counts().reset_index()
+    readmit_counts.columns = ["Readmitted", "Count"]
 
-st.plotly_chart(fig_year, use_container_width=True)
+    fig_donut = px.pie(
+        readmit_counts,
+        names="Readmitted",
+        values="Count",
+        hole=0.5,
+        title="Readmission Distribution"
+    )
+    st.plotly_chart(fig_donut, use_container_width=True)
 
-# -----------------------------
-# DONUT CHART (Gender)
-# -----------------------------
+# ----------------------------
+# FUNNEL CHART
+# ----------------------------
+if "Readmitted" in df.columns:
+    total = len(df)
+    readmitted = df["Readmitted"].sum()
+    not_readmitted = total - readmitted
 
-gender_count = filtered_df["Gender"].value_counts().reset_index()
-gender_count.columns = ["Gender","Count"]
+    fig_funnel = go.Figure(go.Funnel(
+        y=["Total Patients", "Readmitted", "Not Readmitted"],
+        x=[total, readmitted, not_readmitted]
+    ))
 
-fig_donut = px.pie(
-    gender_count,
-    names="Gender",
-    values="Count",
-    hole=0.5,
-    title="Patient Distribution by Gender"
-)
+    fig_funnel.update_layout(title="Patient Funnel")
+    st.plotly_chart(fig_funnel, use_container_width=True)
 
-st.plotly_chart(fig_donut, use_container_width=True)
+st.divider()
 
-# -----------------------------
-# FUNNEL CHART (Recovery Stages)
-# -----------------------------
+# ----------------------------
+# AI PREDICTION PANEL
+# ----------------------------
+st.header("🤖 AI Readmission Prediction")
 
-stage_counts = [
-    total_patients,
-    int(total_patients*0.8),
-    int(total_patients*0.6),
-    int(total_patients*0.4),
-]
+model_path = os.path.join(BASE_DIR, "readmission_model.pkl")
+encoder_path = os.path.join(BASE_DIR, "encoder.pkl")
 
-fig_funnel = go.Figure(go.Funnel(
-    y = ["Admitted","Discharged","Follow-up","Recovered"],
-    x = stage_counts
-))
+if os.path.exists(model_path) and os.path.exists(encoder_path):
 
-fig_funnel.update_layout(title="Recovery Funnel")
+    model = pickle.load(open(model_path, "rb"))
+    encoder = pickle.load(open(encoder_path, "rb"))
 
-st.plotly_chart(fig_funnel, use_container_width=True)
+    age = st.number_input("Age", min_value=0, max_value=120, value=50)
 
-# -----------------------------
-# MACHINE LEARNING MODEL
-# -----------------------------
+    gender = st.selectbox("Gender", df["Gender"].unique())
 
-features = ["Length_of_Stay","Support_Level","Persons_Visiting"]
-target = "Recovery_Score"
+    if st.button("Predict Readmission Risk"):
 
-X = df[features]
-y = df[target]
+        input_df = pd.DataFrame({
+            "Age": [age],
+            "Gender": [gender]
+        })
 
-model = RandomForestRegressor()
-model.fit(X,y)
+        input_encoded = encoder.transform(input_df)
 
-# -----------------------------
-# REAL TIME PREDICTION PANEL
-# -----------------------------
+        prediction = model.predict(input_encoded)
 
-st.subheader("AI Recovery Prediction")
+        if prediction[0] == 1:
+            st.error("⚠ High Risk of Readmission")
+        else:
+            st.success("✅ Low Risk of Readmission")
 
-colA,colB,colC = st.columns(3)
-
-stay = colA.slider("Length of Stay",1,30,7)
-support = colB.slider("Support Level",1,10,5)
-visits = colC.slider("Persons Visiting",0,10,2)
-
-input_data = np.array([[stay,support,visits]])
-
-prediction = model.predict(input_data)
-
-st.success(f"Predicted Recovery Score: {round(prediction[0],2)}")
+else:
+    st.warning("Model files not found. Prediction panel disabled.")
