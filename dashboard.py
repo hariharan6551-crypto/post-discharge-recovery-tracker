@@ -1,33 +1,43 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import os
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(layout="wide")
+st.set_page_config(page_title="Recovery Tracker Dashboard", layout="wide")
 
 st.title("Post Discharge Social Support & Recovery Tracker")
 st.subheader("AI-Based Predictive & Recovery Monitoring Dashboard")
 
 # -----------------------------
-# LOAD DATA
+# LOAD DATASET
 # -----------------------------
-df = pd.read_csv("recovery_tracker_data.csv")
 
-# -----------------------------
-# DATA CLEANING
-# -----------------------------
+file_path = "rhs_ml_dataset.csv"
+
+if os.path.exists(file_path):
+    df = pd.read_csv(file_path)
+else:
+    st.error("Dataset file 'rhs_ml_dataset.csv' not found in project folder.")
+    st.stop()
+
 df = df.dropna()
 
-# Convert Date column
+# -----------------------------
+# DATE PROCESSING
+# -----------------------------
+
 if "Date" in df.columns:
     df["Date"] = pd.to_datetime(df["Date"])
     df["Year"] = df["Date"].dt.year
     df["Month"] = df["Date"].dt.month_name()
 
 # -----------------------------
-# SIDEBAR FILTERS
+# FILTERS
 # -----------------------------
+
 st.sidebar.header("Filters")
 
 filtered_df = df.copy()
@@ -50,29 +60,31 @@ if "Month" in df.columns:
     )
     filtered_df = filtered_df[filtered_df["Month"].isin(month)]
 
-# DATE FILTER
+# DATE RANGE
 if "Date" in df.columns:
-    start_date, end_date = st.sidebar.date_input(
+    start, end = st.sidebar.date_input(
         "Date Range",
         [filtered_df["Date"].min(), filtered_df["Date"].max()]
     )
+
     filtered_df = filtered_df[
-        (filtered_df["Date"] >= pd.to_datetime(start_date)) &
-        (filtered_df["Date"] <= pd.to_datetime(end_date))
+        (filtered_df["Date"] >= pd.to_datetime(start)) &
+        (filtered_df["Date"] <= pd.to_datetime(end))
     ]
 
 # GENDER FILTER
 if "Gender" in df.columns:
     gender = st.sidebar.multiselect(
         "Gender",
-        ["Male","Female"],
-        default=["Male","Female"]
+        filtered_df["Gender"].unique(),
+        default=filtered_df["Gender"].unique()
     )
     filtered_df = filtered_df[filtered_df["Gender"].isin(gender)]
 
 # -----------------------------
 # KPI METRICS
 # -----------------------------
+
 st.header("KPI Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -80,20 +92,27 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Total Patients", len(filtered_df))
 
 if "Recovery_Score" in filtered_df.columns:
-    col2.metric("Avg Recovery Score",
-                round(filtered_df["Recovery_Score"].mean(),2))
+    col2.metric(
+        "Average Recovery Score",
+        round(filtered_df["Recovery_Score"].mean(), 2)
+    )
 
 if "Persons_Visiting" in filtered_df.columns:
-    col3.metric("Avg Persons Visiting",
-                round(filtered_df["Persons_Visiting"].mean(),2))
+    col3.metric(
+        "Avg Persons Visiting",
+        round(filtered_df["Persons_Visiting"].mean(), 2)
+    )
 
 if "Readmission_Risk" in filtered_df.columns:
-    col4.metric("High Risk Patients",
-                (filtered_df["Readmission_Risk"]=="High").sum())
+    col4.metric(
+        "High Risk Patients",
+        (filtered_df["Readmission_Risk"] == "High").sum()
+    )
 
 # -----------------------------
 # AGGREGATED DATASET
 # -----------------------------
+
 st.header("Aggregated Dataset")
 
 if "Support_Level" in filtered_df.columns:
@@ -103,9 +122,10 @@ if "Support_Level" in filtered_df.columns:
 # -----------------------------
 # BAR CHART
 # -----------------------------
-st.header("Recovery Score by Support Level")
 
 if "Support_Level" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
+
+    st.header("Recovery Score by Support Level")
 
     fig_bar = px.bar(
         filtered_df,
@@ -119,9 +139,10 @@ if "Support_Level" in filtered_df.columns and "Recovery_Score" in filtered_df.co
 # -----------------------------
 # DONUT CHART
 # -----------------------------
-st.header("Support Level Distribution")
 
 if "Support_Level" in filtered_df.columns:
+
+    st.header("Support Level Distribution")
 
     fig_donut = px.pie(
         filtered_df,
@@ -134,24 +155,25 @@ if "Support_Level" in filtered_df.columns:
 # -----------------------------
 # FUNNEL CHART
 # -----------------------------
-st.header("Medication Adherence Funnel")
 
 if "Medication_Adherence" in filtered_df.columns:
 
-    funnel_data = filtered_df["Medication_Adherence"].value_counts().reset_index()
-    funnel_data.columns = ["Stage","Count"]
+    st.header("Medication Adherence Funnel")
 
-    fig_funnel = px.funnel(
-        funnel_data,
-        x="Count",
-        y="Stage"
-    )
+    funnel_data = filtered_df["Medication_Adherence"].value_counts().reset_index()
+    funnel_data.columns = ["Stage", "Count"]
+
+    fig_funnel = go.Figure(go.Funnel(
+        y=funnel_data["Stage"],
+        x=funnel_data["Count"]
+    ))
 
     st.plotly_chart(fig_funnel, use_container_width=True)
 
 # -----------------------------
-# YEARLY TREND
+# YEAR TREND CHART
 # -----------------------------
+
 if "Year" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
 
     st.header("Yearly Recovery Trend")
@@ -168,9 +190,10 @@ if "Year" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
 # -----------------------------
 # MACHINE LEARNING MODEL
 # -----------------------------
-st.header("AI Readmission Risk Prediction")
 
 if "Readmission_Risk" in filtered_df.columns:
+
+    st.header("AI Predictive Model")
 
     df_ml = filtered_df.copy()
 
@@ -183,17 +206,18 @@ if "Readmission_Risk" in filtered_df.columns:
     y = df_ml["Readmission_Risk"]
 
     model = DecisionTreeClassifier()
-    model.fit(X,y)
+    model.fit(X, y)
 
     # -----------------------------
-    # REAL TIME PREDICTION PANEL
+    # REAL TIME PREDICTION
     # -----------------------------
-    st.subheader("Real-Time Patient Risk Prediction")
+
+    st.subheader("Real-Time Risk Prediction")
 
     input_data = {}
 
     for col in X.columns:
-        val = st.number_input(f"{col}", value=1)
+        val = st.number_input(col, value=1)
         input_data[col] = val
 
     if st.button("Predict Risk"):
