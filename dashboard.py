@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-import os
+from sklearn.linear_model import LinearRegression
 
 # -------------------------------------------------
 # PAGE CONFIG
 # -------------------------------------------------
-st.set_page_config(page_title="AI Recovery Dashboard", layout="wide")
+st.set_page_config(
+    page_title="Post-Discharge Social Support and Recovery Tracker",
+    layout="wide"
+)
 
 # -------------------------------------------------
 # LOGIN SYSTEM
@@ -32,165 +33,136 @@ if not st.session_state.logged_in:
     st.stop()
 
 # -------------------------------------------------
-# LOAD DATA
+# TITLE
 # -------------------------------------------------
-@st.cache_data
-def load_data():
-    return pd.read_csv("rhs_ml_dataset.csv")
-
-if not os.path.exists("rhs_ml_dataset.csv"):
-    st.error("Dataset not found.")
-    st.stop()
-
-df = load_data()
+st.title("Post-Discharge Social Support and Recovery Tracker")
 
 # -------------------------------------------------
-# PREPROCESS DATE
+# LOAD DATASET
 # -------------------------------------------------
-df["date"] = pd.to_datetime(df["date"], errors="coerce")
-df = df.dropna(subset=["date"])
+df = pd.read_csv("data.csv")  # Make sure data.csv exists
 
-df["Year"] = df["date"].dt.year
-df["Month"] = df["date"].dt.month
-df["Date"] = df["date"].dt.date
-
-# -------------------------------------------------
-# CREATE AGGREGATED DATASET
-# -------------------------------------------------
-agg_df = df.groupby(["Year", "Month", "gender"]).agg(
-    Total_Patients=("gender", "count"),
-    Total_Readmissions=("readmitted", "sum"),
-    Avg_Age=("age", "mean")
-).reset_index()
-
-agg_df["Readmission_Rate"] = (
-    agg_df["Total_Readmissions"] / agg_df["Total_Patients"]
-) * 100
+df["Date"] = pd.to_datetime(df["Date"])
+df["Year"] = df["Date"].dt.year
+df["Month"] = df["Date"].dt.month
 
 # -------------------------------------------------
 # SIDEBAR FILTERS
 # -------------------------------------------------
 st.sidebar.header("Filters")
 
-years = sorted(agg_df["Year"].unique())
-months = sorted(agg_df["Month"].unique())
-genders = sorted(agg_df["gender"].unique())
+year_filter = st.sidebar.multiselect(
+    "Select Year",
+    options=df["Year"].unique(),
+    default=df["Year"].unique()
+)
 
-selected_year = st.sidebar.selectbox("Year", years)
-selected_month = st.sidebar.selectbox("Month", months)
-selected_gender = st.sidebar.selectbox("Gender", genders)
+gender_filter = st.sidebar.multiselect(
+    "Select Gender",
+    options=df["Gender"].unique(),
+    default=df["Gender"].unique()
+)
 
-filtered = agg_df[
-    (agg_df["Year"] == selected_year) &
-    (agg_df["Month"] == selected_month) &
-    (agg_df["gender"] == selected_gender)
+filtered_df = df[
+    (df["Year"].isin(year_filter)) &
+    (df["Gender"].isin(gender_filter))
 ]
 
 # -------------------------------------------------
-# DASHBOARD TITLE
+# AGGREGATED DATASET
 # -------------------------------------------------
-st.title("AI-Powered Post-Discharge Recovery Dashboard")
+agg_df = filtered_df.groupby(["Year", "Gender"]).agg({
+    "Treatment_Cost": "sum",
+    "Patient_ID": "count"
+}).reset_index()
+
+agg_df.rename(columns={"Patient_ID": "Total_Patients"}, inplace=True)
 
 # -------------------------------------------------
-# KPI SECTION
+# KPI METRICS
 # -------------------------------------------------
-if not filtered.empty:
-    row = filtered.iloc[0]
+col1, col2, col3 = st.columns(3)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Patients", int(row["Total_Patients"]))
-    col2.metric("Total Readmissions", int(row["Total_Readmissions"]))
-    col3.metric("Readmission Rate (%)", round(row["Readmission_Rate"], 2))
-else:
-    st.warning("No data available for selected filters.")
-    st.stop()
+col1.metric("Total Patients", filtered_df.shape[0])
+col2.metric("Total Treatment Cost", f"${filtered_df['Treatment_Cost'].sum():,.0f}")
+col3.metric("Average Age", f"{filtered_df['Age'].mean():.1f}")
 
-st.divider()
+st.markdown("---")
 
 # -------------------------------------------------
-# BAR CHART - MONTHLY PATIENTS
+# BAR CHART
 # -------------------------------------------------
-fig_bar = px.bar(
-    agg_df,
-    x="Month",
-    y="Total_Patients",
-    color="gender",
-    title="Monthly Patients by Gender"
+bar_chart = px.bar(
+    filtered_df,
+    x="Department",
+    title="Patients by Department",
 )
-st.plotly_chart(fig_bar, use_container_width=True)
+
+st.plotly_chart(bar_chart, use_container_width=True)
 
 # -------------------------------------------------
-# DONUT CHART - READMISSION DISTRIBUTION
+# DONUT CHART
 # -------------------------------------------------
-fig_donut = px.pie(
-    names=["Readmitted", "Not Readmitted"],
-    values=[
-        row["Total_Readmissions"],
-        row["Total_Patients"] - row["Total_Readmissions"]
-    ],
+donut_chart = px.pie(
+    filtered_df,
+    names="Payment_Status",
     hole=0.5,
-    title="Readmission Distribution"
+    title="Payment Status Distribution"
 )
-st.plotly_chart(fig_donut, use_container_width=True)
+
+st.plotly_chart(donut_chart, use_container_width=True)
 
 # -------------------------------------------------
 # FUNNEL CHART
 # -------------------------------------------------
-fig_funnel = go.Figure(go.Funnel(
-    y=["Total Patients", "Readmitted", "Recovered"],
-    x=[
-        row["Total_Patients"],
-        row["Total_Readmissions"],
-        row["Total_Patients"] - row["Total_Readmissions"]
-    ]
+funnel_data = filtered_df["Payment_Status"].value_counts().reset_index()
+funnel_data.columns = ["Stage", "Count"]
+
+funnel_chart = go.Figure(go.Funnel(
+    y=funnel_data["Stage"],
+    x=funnel_data["Count"]
 ))
-st.plotly_chart(fig_funnel, use_container_width=True)
+
+funnel_chart.update_layout(title="Payment Funnel")
+
+st.plotly_chart(funnel_chart, use_container_width=True)
 
 # -------------------------------------------------
-# DAILY VISITS CHART (FROM RAW DATA)
+# MACHINE LEARNING PROTOTYPE MODEL
 # -------------------------------------------------
-daily_df = df.groupby("Date").size().reset_index(name="Patients")
+st.markdown("## AI Prediction Panel")
 
-fig_line = px.line(
-    daily_df,
-    x="Date",
-    y="Patients",
-    title="Daily Patient Visits"
-)
-st.plotly_chart(fig_line, use_container_width=True)
+# Aggregate daily patient count
+daily_data = filtered_df.groupby("Date").size().reset_index(name="Patients")
 
-st.divider()
+if len(daily_data) > 1:
+    daily_data["Date_Ordinal"] = daily_data["Date"].map(pd.Timestamp.toordinal)
+
+    X = daily_data[["Date_Ordinal"]]
+    y = daily_data["Patients"]
+
+    model = LinearRegression()
+    model.fit(X, y)
+
+    future_date = st.date_input("Select Future Date for Prediction")
+
+    future_ordinal = pd.Timestamp(future_date).toordinal()
+    prediction = model.predict([[future_ordinal]])[0]
+
+    st.success(f"Predicted Patients on {future_date}: {int(prediction)}")
+
+else:
+    st.warning("Not enough data for prediction.")
 
 # -------------------------------------------------
-# MACHINE LEARNING PROTOTYPE
+# SHOW AGGREGATED DATASET
 # -------------------------------------------------
-st.header("Predictive AI Prototype")
+st.markdown("## Aggregated Dataset")
+st.dataframe(agg_df)
 
-# Encode gender
-le = LabelEncoder()
-agg_df["gender_encoded"] = le.fit_transform(agg_df["gender"])
-
-X = agg_df[["Year", "Month", "gender_encoded", "Total_Patients", "Avg_Age"]]
-y = agg_df["Readmission_Rate"]
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-
-model = RandomForestRegressor(random_state=42)
-model.fit(X_train, y_train)
-
-gender_encoded = le.transform([selected_gender])[0]
-
-prediction_input = pd.DataFrame([[
-    selected_year,
-    selected_month,
-    gender_encoded,
-    row["Total_Patients"],
-    row["Avg_Age"]
-]], columns=X.columns)
-
-predicted_rate = model.predict(prediction_input)[0]
-
-st.subheader("Predicted Readmission Rate")
-st.success(f"{round(predicted_rate, 2)} %")
-
-st.success("System Running Successfully")
+# -------------------------------------------------
+# LOGOUT BUTTON
+# -------------------------------------------------
+if st.button("Logout"):
+    st.session_state.logged_in = False
+    st.rerun()
