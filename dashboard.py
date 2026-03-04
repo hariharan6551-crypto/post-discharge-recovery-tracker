@@ -9,11 +9,9 @@ from sklearn.metrics import accuracy_score
 st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
 
 st.title("Post Discharge Social Support & Recovery Tracker")
-st.markdown("Machine Learning & Predictive Analytics Dashboard")
+st.markdown("Predictive Analytics Dashboard")
 
-# ===============================
-# LOAD DATA
-# ===============================
+# ================= LOAD DATA =================
 
 @st.cache_data
 def load_data():
@@ -21,41 +19,31 @@ def load_data():
 
 df = load_data()
 
-# Ensure required columns exist
+# Required columns check
 required_cols = ["Age", "Length_of_Stay", "Social_Support_Level", "Readmitted"]
-
 for col in required_cols:
     if col not in df.columns:
         st.error(f"Missing required column: {col}")
         st.stop()
 
-# Add Year column if missing
 if "Year" not in df.columns:
     df["Year"] = 2023
 
-# ===============================
-# SIDEBAR YEAR FILTER
-# ===============================
+# ================= SIDEBAR FILTER =================
 
-st.sidebar.header("Filter Panel")
+st.sidebar.header("Year Filter")
 selected_year = st.sidebar.selectbox("Select Year", sorted(df["Year"].unique()))
 filtered_df = df[df["Year"] == selected_year]
 
-# ===============================
-# KPI SECTION
-# ===============================
-
-st.subheader("Key Performance Indicators")
+# ================= KPI =================
 
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Total Patients", len(filtered_df))
 col2.metric("Readmission Rate (%)", f"{filtered_df['Readmitted'].mean()*100:.2f}")
-col3.metric("Avg Length of Stay", f"{filtered_df['Length_of_Stay'].mean():.1f} Days")
+col3.metric("Avg Length of Stay", f"{filtered_df['Length_of_Stay'].mean():.1f}")
 
-# ===============================
-# ANIMATED BAR CHART
-# ===============================
+# ================= ANIMATED BAR =================
 
 trend = df.groupby("Year")["Readmitted"].mean().reset_index()
 
@@ -64,15 +52,13 @@ fig_bar = px.bar(
     x="Year",
     y="Readmitted",
     animation_frame="Year",
-    range_y=[0, 1],
+    range_y=[0,1],
     title="Yearly Readmission Trend"
 )
 
 st.plotly_chart(fig_bar, use_container_width=True)
 
-# ===============================
-# DONUT CHART
-# ===============================
+# ================= DONUT =================
 
 fig_donut = px.pie(
     filtered_df,
@@ -83,9 +69,7 @@ fig_donut = px.pie(
 
 st.plotly_chart(fig_donut, use_container_width=True)
 
-# ===============================
-# FUNNEL CHART
-# ===============================
+# ================= FUNNEL =================
 
 funnel_data = filtered_df["Social_Support_Level"].value_counts().reset_index()
 funnel_data.columns = ["Stage", "Count"]
@@ -97,9 +81,7 @@ fig_funnel = go.Figure(go.Funnel(
 
 st.plotly_chart(fig_funnel, use_container_width=True)
 
-# ===============================
-# MACHINE LEARNING MODEL (AUTO TRAIN)
-# ===============================
+# ================= ML MODEL (AUTO TRAIN) =================
 
 X = df[["Age", "Length_of_Stay", "Social_Support_Level"]]
 y = df["Readmitted"]
@@ -114,16 +96,14 @@ model.fit(X_train, y_train)
 accuracy = accuracy_score(y_test, model.predict(X_test))
 st.sidebar.success(f"Model Accuracy: {accuracy:.2f}")
 
-# ===============================
-# PREDICTIVE PANEL
-# ===============================
+# ================= PREDICTIVE PANEL =================
 
 st.subheader("Predictive Risk Panel")
 
 colA, colB, colC = st.columns(3)
 
 age = colA.number_input("Age", 18, 100, 50)
-stay = colB.number_input("Length of Stay (Days)", 1, 60, 5)
+stay = colB.number_input("Length of Stay", 1, 60, 5)
 support = colC.selectbox("Social Support Level (0=Low,1=Med,2=High)", [0,1,2])
 
 if st.button("Run Prediction"):
