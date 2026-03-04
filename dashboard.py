@@ -11,11 +11,15 @@ st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
 st.title("Post Discharge Social Support & Recovery Tracker")
 st.markdown("AI-Based Predictive & Recovery Monitoring Dashboard")
 
+# ---------------- LOAD DATA ---------------- #
+
 @st.cache_data
 def load_data():
     return pd.read_csv("rhs_ml_dataset.csv")
 
 df = load_data()
+
+# ---------------- DATA PREP ---------------- #
 
 required_columns = [
     "Age",
@@ -33,7 +37,7 @@ for col in required_columns:
 if "Year" not in df.columns:
     df["Year"] = 2023
 
-# ================= FILTER =================
+# ---------------- FILTER PANEL ---------------- #
 
 st.sidebar.header("Filter Panel")
 
@@ -45,7 +49,7 @@ filtered_df = df[df["Year"] == year]
 if gender != "All":
     filtered_df = filtered_df[filtered_df["Gender"] == gender]
 
-# ================= KPI =================
+# ---------------- KPI METRICS ---------------- #
 
 col1, col2, col3 = st.columns(3)
 
@@ -58,7 +62,7 @@ else:
     col2.metric("Readmission Rate (%)", "0")
     col3.metric("Avg Stay", "0")
 
-# ================= CHARTS =================
+# ---------------- YEARLY ANIMATED CHART ---------------- #
 
 trend = df.groupby("Year")["Readmitted"].mean().reset_index()
 
@@ -73,27 +77,30 @@ fig_bar = px.bar(
 
 st.plotly_chart(fig_bar, use_container_width=True)
 
-if len(filtered_df) > 0:
+# ---------------- DONUT CHART ---------------- #
 
-    fig_donut = px.pie(
-        filtered_df,
-        names="Readmitted",
-        hole=0.5,
-        title="Readmission Distribution"
-    )
-    st.plotly_chart(fig_donut, use_container_width=True)
+fig_donut = px.pie(
+    filtered_df,
+    names="Readmitted",
+    hole=0.5,
+    title="Readmission Distribution"
+)
 
-    funnel = filtered_df["Social_Support_Level"].value_counts().reset_index()
-    funnel.columns = ["Support Level", "Count"]
+st.plotly_chart(fig_donut, use_container_width=True)
 
-    fig_funnel = go.Figure(go.Funnel(
-        y=funnel["Support Level"],
-        x=funnel["Count"]
-    ))
+# ---------------- FUNNEL ---------------- #
 
-    st.plotly_chart(fig_funnel, use_container_width=True)
+funnel = filtered_df["Social_Support_Level"].value_counts().reset_index()
+funnel.columns = ["Support Level", "Count"]
 
-# ================= ML MODEL (NO PKL) =================
+fig_funnel = go.Figure(go.Funnel(
+    y=funnel["Support Level"],
+    x=funnel["Count"]
+))
+
+st.plotly_chart(fig_funnel, use_container_width=True)
+
+# ---------------- MACHINE LEARNING MODEL ---------------- #
 
 df["Gender_Encoded"] = df["Gender"].map({"Male":0,"Female":1})
 
@@ -108,9 +115,10 @@ model = RandomForestClassifier(random_state=42)
 model.fit(X_train,y_train)
 
 acc = accuracy_score(y_test, model.predict(X_test))
+
 st.sidebar.success(f"Model Accuracy: {acc:.2f}")
 
-# ================= PREDICTION =================
+# ---------------- REAL TIME PREDICTION ---------------- #
 
 st.subheader("Predictive Risk Panel")
 
