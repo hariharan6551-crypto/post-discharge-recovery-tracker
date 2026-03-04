@@ -19,7 +19,7 @@ def load_data():
 
 df = load_data()
 
-# ---------------- REQUIRED COLUMNS ---------------- #
+# ---------------- CHECK REQUIRED COLUMNS ---------------- #
 
 required_columns = [
     "Length_of_Stay",
@@ -33,7 +33,7 @@ for col in required_columns:
         st.error(f"Missing column: {col}")
         st.stop()
 
-# Ensure Year column exists
+# Add Year if missing
 if "Year" not in df.columns:
     df["Year"] = 2023
 
@@ -62,7 +62,7 @@ else:
     col2.metric("Readmission Rate (%)", "0")
     col3.metric("Avg Stay", "0")
 
-# ---------------- ANIMATED YEAR CHART ---------------- #
+# ---------------- YEARLY TREND ---------------- #
 
 trend = df.groupby("Year")["Readmitted"].mean().reset_index()
 
@@ -70,8 +70,6 @@ fig_bar = px.bar(
     trend,
     x="Year",
     y="Readmitted",
-    animation_frame="Year",
-    range_y=[0,1],
     title="Yearly Readmission Trend"
 )
 
@@ -107,28 +105,28 @@ df["Gender_Encoded"] = df["Gender"].map({"Male":0,"Female":1})
 X = df[["Length_of_Stay","Social_Support_Level","Gender_Encoded"]]
 y = df["Readmitted"]
 
-X_train,X_test,y_train,y_test = train_test_split(
-    X,y,test_size=0.2,random_state=42
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
 )
 
 model = RandomForestClassifier(random_state=42)
-model.fit(X_train,y_train)
+model.fit(X_train, y_train)
 
 acc = accuracy_score(y_test, model.predict(X_test))
 
 st.sidebar.success(f"Model Accuracy: {acc:.2f}")
 
-# ---------------- REAL TIME PREDICTION PANEL ---------------- #
+# ---------------- REAL TIME PREDICTION ---------------- #
 
 st.subheader("Predictive Risk Panel")
 
-c1,c2,c3 = st.columns(3)
+c1, c2, c3 = st.columns(3)
 
-stay = c1.number_input("Length of Stay",1,60,5)
-support = c2.selectbox("Social Support Level",[0,1,2])
-gender_input = c3.selectbox("Gender",["Male","Female"])
+stay = c1.number_input("Length of Stay", 1, 60, 5)
+support = c2.selectbox("Social Support Level", [0,1,2])
+gender_input = c3.selectbox("Gender", ["Male","Female"])
 
-gender_encoded = 0 if gender_input=="Male" else 1
+gender_encoded = 0 if gender_input == "Male" else 1
 
 if st.button("Run Prediction"):
 
