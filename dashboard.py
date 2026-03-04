@@ -19,10 +19,9 @@ def load_data():
 
 df = load_data()
 
-# ---------------- DATA PREP ---------------- #
+# ---------------- REQUIRED COLUMNS ---------------- #
 
 required_columns = [
-    "Age",
     "Length_of_Stay",
     "Social_Support_Level",
     "Readmitted",
@@ -34,6 +33,7 @@ for col in required_columns:
         st.error(f"Missing column: {col}")
         st.stop()
 
+# Ensure Year column exists
 if "Year" not in df.columns:
     df["Year"] = 2023
 
@@ -62,7 +62,7 @@ else:
     col2.metric("Readmission Rate (%)", "0")
     col3.metric("Avg Stay", "0")
 
-# ---------------- YEARLY ANIMATED CHART ---------------- #
+# ---------------- ANIMATED YEAR CHART ---------------- #
 
 trend = df.groupby("Year")["Readmitted"].mean().reset_index()
 
@@ -88,7 +88,7 @@ fig_donut = px.pie(
 
 st.plotly_chart(fig_donut, use_container_width=True)
 
-# ---------------- FUNNEL ---------------- #
+# ---------------- FUNNEL CHART ---------------- #
 
 funnel = filtered_df["Social_Support_Level"].value_counts().reset_index()
 funnel.columns = ["Support Level", "Count"]
@@ -104,7 +104,7 @@ st.plotly_chart(fig_funnel, use_container_width=True)
 
 df["Gender_Encoded"] = df["Gender"].map({"Male":0,"Female":1})
 
-X = df[["Age","Length_of_Stay","Social_Support_Level","Gender_Encoded"]]
+X = df[["Length_of_Stay","Social_Support_Level","Gender_Encoded"]]
 y = df["Readmitted"]
 
 X_train,X_test,y_train,y_test = train_test_split(
@@ -118,23 +118,21 @@ acc = accuracy_score(y_test, model.predict(X_test))
 
 st.sidebar.success(f"Model Accuracy: {acc:.2f}")
 
-# ---------------- REAL TIME PREDICTION ---------------- #
+# ---------------- REAL TIME PREDICTION PANEL ---------------- #
 
 st.subheader("Predictive Risk Panel")
 
-c1,c2,c3,c4 = st.columns(4)
+c1,c2,c3 = st.columns(3)
 
-age = c1.number_input("Age",18,100,50)
-stay = c2.number_input("Length of Stay",1,60,5)
-support = c3.selectbox("Social Support Level",[0,1,2])
-gender_input = c4.selectbox("Gender",["Male","Female"])
+stay = c1.number_input("Length of Stay",1,60,5)
+support = c2.selectbox("Social Support Level",[0,1,2])
+gender_input = c3.selectbox("Gender",["Male","Female"])
 
 gender_encoded = 0 if gender_input=="Male" else 1
 
 if st.button("Run Prediction"):
 
     input_df = pd.DataFrame({
-        "Age":[age],
         "Length_of_Stay":[stay],
         "Social_Support_Level":[support],
         "Gender_Encoded":[gender_encoded]
