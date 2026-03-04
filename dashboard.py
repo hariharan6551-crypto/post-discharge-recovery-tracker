@@ -1,15 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+import joblib
 
 st.set_page_config(page_title="Post Discharge Recovery Tracker", layout="wide")
 
 st.title("Post Discharge Social Support & Recovery Tracker")
-st.markdown("Predictive Analytics & Recovery Monitoring Dashboard")
 
 # ===============================
 # LOAD DATA
@@ -21,111 +17,59 @@ def load_data():
 
 df = load_data()
 
-if "Year" not in df.columns:
-    df["Year"] = 2023
+st.subheader("Dataset Preview")
+st.dataframe(df.head())
 
 # ===============================
-# SIDEBAR FILTER
+# DASHBOARD VISUALS
 # ===============================
 
-st.sidebar.header("Filter Panel")
-selected_year = st.sidebar.selectbox("Select Year", sorted(df["Year"].unique()))
-filtered_df = df[df["Year"] == selected_year]
-
-# ===============================
-# KPI SECTION
-# ===============================
-
-st.subheader("Key Performance Indicators")
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Patients", len(filtered_df))
-
-if "Readmitted" in filtered_df.columns:
-    readmission_rate = filtered_df["Readmitted"].mean() * 100
-    col2.metric("Readmission Rate (%)", f"{readmission_rate:.2f}")
-
-if "Length_of_Stay" in filtered_df.columns:
-    col3.metric("Avg Length of Stay", f"{filtered_df['Length_of_Stay'].mean():.1f} Days")
-
-# ===============================
-# ANIMATED BAR
-# ===============================
+st.subheader("Readmission Distribution")
 
 if "Readmitted" in df.columns:
-    trend = df.groupby("Year")["Readmitted"].mean().reset_index()
-    fig_bar = px.bar(trend, x="Year", y="Readmitted",
-                     animation_frame="Year",
-                     range_y=[0,1],
-                     title="Yearly Readmission Trend")
-    st.plotly_chart(fig_bar, use_container_width=True)
+    fig1 = px.histogram(df, x="Readmitted", title="Readmission Count")
+    st.plotly_chart(fig1, use_container_width=True)
+
+if "Age" in df.columns:
+    fig2 = px.histogram(df, x="Age", title="Age Distribution")
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ===============================
-# DONUT CHART
+# LOAD MODEL
 # ===============================
 
-if "Readmitted" in filtered_df.columns:
-    fig_donut = px.pie(filtered_df,
-                       names="Readmitted",
-                       hole=0.5,
-                       title="Readmission Distribution")
-    st.plotly_chart(fig_donut, use_container_width=True)
+@st.cache_resource
+def load_model():
+    return joblib.load("readmission_model.pkl")
+
+model = load_model()
 
 # ===============================
-# FUNNEL CHART
+# PREDICTION SECTION
 # ===============================
 
-if "Social_Support_Level" in filtered_df.columns:
-    funnel_data = filtered_df["Social_Support_Level"].value_counts().reset_index()
-    funnel_data.columns = ["Stage", "Count"]
-    fig_funnel = go.Figure(go.Funnel(
-        y=funnel_data["Stage"],
-        x=funnel_data["Count"]
-    ))
-    st.plotly_chart(fig_funnel, use_container_width=True)
+st.subheader("Predict Patient Readmission Risk")
 
-# ===============================
-# MACHINE LEARNING MODEL (AUTO TRAIN)
-# ===============================
+age = st.number_input("Age", 18, 100, 50)
+length_of_stay = st.number_input("Length of Stay (days)", 1, 60, 5)
+social_support = st.selectbox("Social Support Level", ["Low", "Medium", "High"])
 
-if all(col in df.columns for col in ["Age", "Length_of_Stay", "Social_Support_Level", "Readmitted"]):
+# Encode social support manually (adjust if your encoding differs)
+support_map = {"Low": 0, "Medium": 1, "High": 2}
+support_encoded = support_map[social_support]
 
-    X = df[["Age", "Length_of_Stay", "Social_Support_Level"]]
-    y = df["Readmitted"]
+if st.button("Predict Risk"):
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    input_data = pd.DataFrame({
+        "Age": [age],
+        "Length_of_Stay": [length_of_stay],
+        "Social_Support_Level": [support_encoded]
+    })
 
-    model = RandomForestClassifier()
-    model.fit(X_train, y_train)
+    prediction = model.predict(input_data)[0]
+    probability = model.predict_proba(input_data)[0][1]
 
-    accuracy = accuracy_score(y_test, model.predict(X_test))
-
-    st.sidebar.success(f"Model Accuracy: {accuracy:.2f}")
-
-    # ===============================
-    # PREDICTIVE PANEL
-    # ===============================
-
-    st.subheader("Predictive Risk Panel")
-
-    colA, colB, colC = st.columns(3)
-
-    age = colA.number_input("Age", 18, 100, 50)
-    stay = colB.number_input("Length of Stay (Days)", 1, 60, 5)
-    support = colC.selectbox("Social Support Level", [0,1,2])
-
-    if st.button("Run Prediction"):
-
-        input_data = pd.DataFrame({
-            "Age": [age],
-            "Length_of_Stay": [stay],
-            "Social_Support_Level": [support]
-        })
-
-        prediction = model.predict(input_data)[0]
-        probability = model.predict_proba(input_data)[0][1]
-
-        if prediction == 1:
-            st.error(f"High Readmission Risk - Probability: {probability:.2f}")
-        else:
-            st.success(f"Low Readmission Risk - Probability: {probability:.2f}")
+    if prediction == 1:
+        st.error(f"High Readmission Risk (Probability: {probability:.2f})")
+    else:
+        st.success(f"Low Readmission Risk (Probability: {probability:.2f})")
