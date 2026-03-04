@@ -1,134 +1,105 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import os
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
 
-st.set_page_config(page_title="Recovery Tracker Dashboard", layout="wide")
+st.set_page_config(layout="wide")
 
 st.title("Post Discharge Social Support & Recovery Tracker")
 st.subheader("AI-Based Predictive & Recovery Monitoring Dashboard")
 
 # -----------------------------
-# LOAD DATASET
+# Load dataset
 # -----------------------------
+df = pd.read_csv("recovery_tracker_data.csv")
 
-file_path = "rhs_ml_dataset.csv"
-
-if os.path.exists(file_path):
-    df = pd.read_csv(file_path)
-else:
-    st.error("Dataset file 'rhs_ml_dataset.csv' not found in project folder.")
-    st.stop()
-
+# -----------------------------
+# Data Cleaning
+# -----------------------------
 df = df.dropna()
 
-# -----------------------------
-# DATE PROCESSING
-# -----------------------------
-
+# Convert date column if exists
 if "Date" in df.columns:
     df["Date"] = pd.to_datetime(df["Date"])
     df["Year"] = df["Date"].dt.year
     df["Month"] = df["Date"].dt.month_name()
 
 # -----------------------------
-# FILTERS
+# Sidebar Filters
 # -----------------------------
-
 st.sidebar.header("Filters")
 
-filtered_df = df.copy()
-
-# YEAR FILTER
+# Year filter
 if "Year" in df.columns:
-    year = st.sidebar.multiselect(
-        "Year",
-        sorted(df["Year"].unique()),
-        default=sorted(df["Year"].unique())
+    year_filter = st.sidebar.multiselect(
+        "Select Year",
+        options=df["Year"].unique(),
+        default=df["Year"].unique()
     )
-    filtered_df = filtered_df[filtered_df["Year"].isin(year)]
+    df = df[df["Year"].isin(year_filter)]
 
-# MONTH FILTER
-if "Month" in df.columns:
-    month = st.sidebar.multiselect(
-        "Month",
-        filtered_df["Month"].unique(),
-        default=filtered_df["Month"].unique()
-    )
-    filtered_df = filtered_df[filtered_df["Month"].isin(month)]
-
-# DATE RANGE
-if "Date" in df.columns:
-    start, end = st.sidebar.date_input(
-        "Date Range",
-        [filtered_df["Date"].min(), filtered_df["Date"].max()]
-    )
-
-    filtered_df = filtered_df[
-        (filtered_df["Date"] >= pd.to_datetime(start)) &
-        (filtered_df["Date"] <= pd.to_datetime(end))
-    ]
-
-# GENDER FILTER
+# Gender filter
 if "Gender" in df.columns:
-    gender = st.sidebar.multiselect(
-        "Gender",
-        filtered_df["Gender"].unique(),
-        default=filtered_df["Gender"].unique()
+    gender_filter = st.sidebar.multiselect(
+        "Select Gender",
+        options=df["Gender"].unique(),
+        default=df["Gender"].unique()
     )
-    filtered_df = filtered_df[filtered_df["Gender"].isin(gender)]
+    df = df[df["Gender"].isin(gender_filter)]
+
+# Month filter
+if "Month" in df.columns:
+    month_filter = st.sidebar.multiselect(
+        "Select Month",
+        options=df["Month"].unique(),
+        default=df["Month"].unique()
+    )
+    df = df[df["Month"].isin(month_filter)]
+
+# Date filter
+if "Date" in df.columns:
+    date_filter = st.sidebar.date_input(
+        "Select Date Range",
+        [df["Date"].min(), df["Date"].max()]
+    )
+    df = df[(df["Date"] >= pd.to_datetime(date_filter[0])) &
+            (df["Date"] <= pd.to_datetime(date_filter[1]))]
 
 # -----------------------------
-# KPI METRICS
+# KPI Metrics
 # -----------------------------
-
 st.header("KPI Metrics")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
-col1.metric("Total Patients", len(filtered_df))
+col1.metric("Total Patients", len(df))
 
-if "Recovery_Score" in filtered_df.columns:
-    col2.metric(
-        "Average Recovery Score",
-        round(filtered_df["Recovery_Score"].mean(), 2)
-    )
+if "Recovery_Score" in df.columns:
+    col2.metric("Avg Recovery Score", round(df["Recovery_Score"].mean(),2))
 
-if "Persons_Visiting" in filtered_df.columns:
-    col3.metric(
-        "Avg Persons Visiting",
-        round(filtered_df["Persons_Visiting"].mean(), 2)
-    )
-
-if "Readmission_Risk" in filtered_df.columns:
-    col4.metric(
-        "High Risk Patients",
-        (filtered_df["Readmission_Risk"] == "High").sum()
-    )
+if "Readmission_Risk" in df.columns:
+    col3.metric("High Risk Patients",
+                (df["Readmission_Risk"]=="High").sum())
 
 # -----------------------------
-# AGGREGATED DATASET
+# Aggregated Dataset
 # -----------------------------
-
 st.header("Aggregated Dataset")
 
-if "Support_Level" in filtered_df.columns:
-    agg = filtered_df.groupby("Support_Level").mean(numeric_only=True)
+if "Support_Level" in df.columns:
+    agg = df.groupby("Support_Level").mean(numeric_only=True)
     st.dataframe(agg)
 
 # -----------------------------
-# BAR CHART
+# Bar Chart
 # -----------------------------
+st.header("Recovery Score by Support Level")
 
-if "Support_Level" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
-
-    st.header("Recovery Score by Support Level")
+if "Support_Level" in df.columns and "Recovery_Score" in df.columns:
 
     fig_bar = px.bar(
-        filtered_df,
+        df,
         x="Support_Level",
         y="Recovery_Score",
         color="Support_Level"
@@ -137,15 +108,14 @@ if "Support_Level" in filtered_df.columns and "Recovery_Score" in filtered_df.co
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # -----------------------------
-# DONUT CHART
+# Donut Chart
 # -----------------------------
+st.header("Support Level Distribution")
 
-if "Support_Level" in filtered_df.columns:
-
-    st.header("Support Level Distribution")
+if "Support_Level" in df.columns:
 
     fig_donut = px.pie(
-        filtered_df,
+        df,
         names="Support_Level",
         hole=0.5
     )
@@ -153,33 +123,32 @@ if "Support_Level" in filtered_df.columns:
     st.plotly_chart(fig_donut, use_container_width=True)
 
 # -----------------------------
-# FUNNEL CHART
+# Funnel Chart
 # -----------------------------
+st.header("Medication Adherence Funnel")
 
-if "Medication_Adherence" in filtered_df.columns:
+if "Medication_Adherence" in df.columns:
 
-    st.header("Medication Adherence Funnel")
+    funnel_data = df["Medication_Adherence"].value_counts().reset_index()
+    funnel_data.columns = ["Stage","Count"]
 
-    funnel_data = filtered_df["Medication_Adherence"].value_counts().reset_index()
-    funnel_data.columns = ["Stage", "Count"]
-
-    fig_funnel = go.Figure(go.Funnel(
-        y=funnel_data["Stage"],
-        x=funnel_data["Count"]
-    ))
+    fig_funnel = px.funnel(
+        funnel_data,
+        x="Count",
+        y="Stage"
+    )
 
     st.plotly_chart(fig_funnel, use_container_width=True)
 
 # -----------------------------
-# YEAR TREND CHART
+# Yearly Trend Chart
 # -----------------------------
-
-if "Year" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
+if "Year" in df.columns and "Recovery_Score" in df.columns:
 
     st.header("Yearly Recovery Trend")
 
     fig_year = px.bar(
-        filtered_df,
+        df,
         x="Year",
         y="Recovery_Score",
         color="Support_Level"
@@ -190,12 +159,11 @@ if "Year" in filtered_df.columns and "Recovery_Score" in filtered_df.columns:
 # -----------------------------
 # MACHINE LEARNING MODEL
 # -----------------------------
+st.header("AI Readmission Risk Prediction")
 
-if "Readmission_Risk" in filtered_df.columns:
+if "Readmission_Risk" in df.columns:
 
-    st.header("AI Predictive Model")
-
-    df_ml = filtered_df.copy()
+    df_ml = df.copy()
 
     label = LabelEncoder()
 
@@ -206,23 +174,23 @@ if "Readmission_Risk" in filtered_df.columns:
     y = df_ml["Readmission_Risk"]
 
     model = DecisionTreeClassifier()
-    model.fit(X, y)
+    model.fit(X,y)
 
     # -----------------------------
-    # REAL TIME PREDICTION
+    # Prediction Panel
     # -----------------------------
-
-    st.subheader("Real-Time Risk Prediction")
+    st.subheader("Real-Time Patient Risk Prediction")
 
     input_data = {}
 
     for col in X.columns:
-        val = st.number_input(col, value=1)
+        val = st.number_input(f"Enter {col}", value=1)
         input_data[col] = val
 
     if st.button("Predict Risk"):
 
         input_df = pd.DataFrame([input_data])
+
         prediction = model.predict(input_df)
 
         st.success(f"Predicted Risk Level: {prediction[0]}")
