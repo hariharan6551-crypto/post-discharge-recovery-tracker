@@ -1,2 +1,14 @@
-# post-discharge-recovery-tracker
-Machine Learning based Post-Discharge Social Support and Readmission Risk Prediction Dashboard using Python and Streamlit.
+# Post Discharge Social Support and Recovery Tracker
+
+AI Healthcare Analytics Dashboard built using:
+
+• Streamlit  
+• Pandas  
+• Plotly  
+• Scikit-Learn  
+
+Features
+- Patient analytics dashboard
+- Recovery indicator analysis
+- Interactive visualizations
+- Machine learning prediction
